@@ -1,0 +1,6 @@
+chgnet
+pymatgen
+mp-api
+mace-torch
+torch>=2.0.0
+numpy
