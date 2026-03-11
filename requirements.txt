@@ -1,14 +1,7 @@
-# Core Scientific Stack
-numpy<2.0.0
-torch>=2.2.0,!=2.4.1
-pymatgen>=2025.6.14
-mp-api>=0.45.0
-
-# AI4S Potentials
-chgnet==0.4.2
-mace-torch==0.3.15
-
-# Utilities
-pathlib
-requests
-urllib3
+numpy
+torch>=2.0.0
+pymatgen
+chgnet
+mace-torch
+mp-api
+ase
