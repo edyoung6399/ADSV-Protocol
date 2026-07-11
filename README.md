@@ -8,7 +8,7 @@ A computational workflow for validating the thermodynamic stability of doped cer
 
 ## Overview
 
-ADSV is a computational workflow that validates whether rare-earth doping preserves the thermodynamic stability of a phosphor host lattice. It uses the CHGNet and MACE universal machine learning force fields to relax doped supercells (≥1000 atoms) and compute an aligned formation energy referenced to the Materials Project DFT baseline.
+ADSV is a computational workflow that validates whether rare-earth doping preserves the thermodynamic stability of a phosphor host lattice. It uses the CHGNet and MACE universal machine learning force fields to relax doped supercells (300-600 atoms) and compute an aligned formation energy referenced to the Materials Project DFT baseline.
 
 The core idea: the lattice formation energy (FE) potential well depth governs a ceramic phase's intrinsic resistance to interfacial thermal erosion. ADSV checks that functional doping does not degrade the host into a less stable thermodynamic tier.
 
