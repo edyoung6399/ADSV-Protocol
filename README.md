@@ -1,89 +1,226 @@
-***
+<div align="center">
 
 # ADSV Protocol
 
-**Automated Doping Stability Validation for Glass-Ceramic Systems**
+### Automated Doping Stability Validation for Rare-Earth-Substituted Hosts
 
-A computational workflow for validating the thermodynamic stability of doped ceramic phosphors during glass-ceramic co-sintering processes.
+[![Method](https://img.shields.io/badge/method-Legacy%20ADSV-4C78A8)](./Automated_Doping_Stability_Validation.py)
+[![Models](https://img.shields.io/badge/models-CHGNet%20%2B%20MACE-59A14F)](#method-overview)
+[![Materials Project](https://img.shields.io/badge/data-Materials%20Project-F28E2B)](https://materialsproject.org/)
+[![License](https://img.shields.io/badge/license-MIT-8C8C8C)](./LICENSE)
+
+A reproducible screening workflow for evaluating candidate substitution sites,
+aligned energies, and residual-force consistency in doped inorganic hosts.
+
+</div>
+
+---
 
 ## Overview
 
-ADSV is a computational workflow that validates whether rare-earth doping preserves the thermodynamic stability of a phosphor host lattice. It uses the CHGNet and MACE universal machine learning force fields to relax doped supercells (300-600 atoms) and compute an aligned formation energy referenced to the Materials Project DFT baseline.
+This repository contains the **Legacy ADSV workflow** used to generate the original screening dataset.
 
-The core idea: the lattice formation energy (FE) potential well depth governs a ceramic phase's intrinsic resistance to interfacial thermal erosion. ADSV checks that functional doping does not degrade the host into a less stable thermodynamic tier.
+The workflow combines:
 
-### Key Features
+- **Materials Project** host structures and reference formation energies;
+- **CHGNet** structural relaxation and substitution-site screening;
+- **O-rich chemical-potential references** for substitution-energy ranking;
+- **MACE** single-point energy and residual-force validation.
 
-- **ValenceGate**: Automatic bond-valence analysis to classify substitution sites as isovalent (Class A, full calculation) or aliovalent (Class B, blocked with geometric compatibility report).
-- **Hybrid Relaxation**: CHGNet native `StructOptimizer` for pre-conditioning, followed by MACE-MP for high-fidelity refinement.
-- **O-Rich Thermodynamics**: Chemical potentials derived under the oxygen-rich limit relevant to high-temperature ceramic sintering.
-- **Aligned Formation Energy**: Anchoring ML perturbations to established DFT references (`E_f,aligned = E_DFT,host + (E_ML,doped − E_ML,host)`).
-- **Hardware-Aware**: Automatic GPU profiling with degradation modes for different VRAM tiers (supports Cloud HPC to local CPU).
+> **Important:** MACE is used as a single-point cross-check in this Legacy workflow. It does not perform a second structural relaxation.
 
-## Requirements
+---
 
-- Python ≥ 3.9
-- PyTorch with CUDA support (recommended)
-- [CHGNet](https://github.com/CederGroupHub/chgnet)
-- [MACE](https://github.com/ACEsuit/mace) (optional but recommended)
-- [Pymatgen](https://pymatgen.org/)
-- [mp-api](https://github.com/materialsproject/api)
-- ASE, NumPy
+## Method Overview
 
-Install the required dependencies:
-
-```bash
-pip install chgnet mace-torch pymatgen mp-api ase numpy torch
+```text
+Materials Project host structure
+        |
+        v
+CHGNet host-supercell relaxation
+        |
+        v
+CHGNet candidate-site screening
+        |
+        v
+Full doped-supercell construction
+        |
+        v
+Final CHGNet relaxation
+        |
+        v
+Energy alignment
+        |
+        v
+MACE single-point energy and residual-force check
 ```
 
-*Note: A MACE pre-trained model file is expected at `./models/2023-12-03-mace-128-L1_epoch-199.model`. If unavailable, the protocol will automatically run in CHGNet-only mode.*
+### Historical stability criterion
 
-## Usage
+The Legacy report labels a structure as `Stable` when:
 
-Run the pipeline from the command line:
-
-```bash
-python ADSV_V2.7.py \
-  --mp_id mp-5732 \
-  --doping "Yb:0.18, Er:0.02" \
-  --api_key YOUR_MP_API_KEY
+```text
+MACE residual max force < 0.5 eV/Angstrom
 ```
 
-### Arguments
+This label means that the CHGNet-relaxed structure passed the historical MACE single-point force check. It is not equivalent to full convergence on the MACE potential-energy surface.
 
-| Argument | Description | Default |
-| :--- | :--- | :--- |
-| `--mp_id` | Materials Project ID of the host lattice | `mp-542724` |
-| `--doping` | Doping scheme (`Element:fraction`, comma-separated) | `Yb3+:0.18, Er3+:0.02` |
-| `--relaxed` | Flag to use relaxed energy window (0.20 eV instead of 0.10 eV) | `False` |
-| `--api_key` | Materials Project API key (or set `MP_API_KEY` env variable) | None |
+---
 
-*During execution, the script will interactively prompt for supercell dimensions. Recommended sizes will be printed based on detected hardware capabilities.*
+## Materials Project Compatibility Patch
 
-## Output Structure
+The current script includes a minimal compatibility patch for recent `mp-api`, `emmet-core`, and `pydantic` environments.
 
-Results are saved to a timestamped folder under `results/` (local) or `/root/autodl-tmp/ADSV_Results/` (AutoDL cloud environment):
+Earlier versions requested complete Materials Project Summary documents. Unused DOS and band-structure fields could then trigger local schema-validation errors before ADSV reached the actual calculation.
 
-- `*_Report.txt` — Full calculation report including aligned formation energies, valence analysis, and stability assessment.
-- `*_Optimized.cif` — Relaxed doped supercell structure.
-- `*_Metadata.json` — Machine-readable results and physical parameters.
-- `BLOCKED_*_aliovalent_report.txt` — Detailed geometric compatibility reports for blocked aliovalent sites.
-- `Terminal_Log_*.txt` — Complete intercepted terminal log.
+The patched script requests only the fields it uses, for example:
 
-## Workflow Pipeline
+```python
+fields=["structure", "formation_energy_per_atom"]
+```
 
-1. **Fetch Host**: Retrieves the unmodified structure from the Materials Project and identifies symmetry-inequivalent cation sites.
-2. **ValenceGate**: Determines host-site oxidation states (via BVAnalyzer or composition fallback) and categorizes each site–dopant pair.
-3. **Establish Baseline**: Builds the supercell (≥1000 atoms) and relaxes the undoped host using CHGNet.
-4. **Force Screening**: Screens isovalent sites via single-point MACE force evaluation using valence-aware thresholds.
-5. **Thermodynamic Engine**: Evaluates substitution energies using pre-computed O-rich chemical potentials.
-6. **Deep Validation**: Performs dual-engine (CHGNet → MACE) relaxation on two independent random-seed samples.
-7. **Energy Alignment**: Computes the final aligned formation energy to benchmark against the original thermodynamic database.
+### What the patch changes
 
-## Citation
+- Materials Project query field selection only.
 
-If this protocol assists your research, please cite our related publication (details to be updated upon publication).
+### What the patch does not change
+
+- CHGNet or MACE models;
+- CHGNet relaxation thresholds;
+- MACE single-point validation;
+- the historical `0.5 eV/Angstrom` criterion;
+- O-rich chemical-potential equations;
+- aligned-energy equations;
+- dopant counting;
+- random dopant placement.
+
+Therefore, the patched script preserves the numerical method used for the original Legacy dataset.
+
+---
+
+## Repository Contents
+
+```text
+ADSV-Protocol/
+├── Automated_Doping_Stability_Validation.py
+├── README.md
+├── LICENSE
+├── requirements.txt
+├── environment.yml
+└── .gitignore
+```
+
+---
+
+## Quick Start
+
+### 1. Prepare the environment
+
+Use an environment with CUDA-enabled PyTorch, CHGNet, MACE, pymatgen, ASE, and `mp-api`.
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Set the Materials Project API key
+
+```bash
+export MP_API_KEY='YOUR_32_CHARACTER_MP_API_KEY'
+```
+
+Do not place the API key directly in the Python source file, and do not commit it to GitHub.
+
+### 3. Run a calculation
+
+```bash
+python -u Automated_Doping_Stability_Validation.py \
+  --mp_id mp-1213396 \
+  --doping "Yb3+:0.035, Tm3+:0.005"
+```
+
+When prompted for the supercell, enter the required dimensions, for example:
+
+```text
+1 1 2
+```
+
+Another example:
+
+```bash
+python -u Automated_Doping_Stability_Validation.py \
+  --mp_id mp-5516 \
+  --doping "Yb3+:0.18, Er3+:0.02"
+```
+
+Supercell input:
+
+```text
+2 2 2
+```
+
+---
+
+## Output Files
+
+Results are written under:
+
+```text
+results/
+```
+
+A completed run typically contains:
+
+```text
+*_Report.txt
+*_Optimized.cif
+```
+
+The CIF file is the final **CHGNet-relaxed** structure. MACE evaluates that structure without further relaxation.
+
+---
+
+## Energy Definition
+
+The reported aligned energy is:
+
+```text
+E_aligned = E_MP,host + (E_ML,doped - E_ML,host)
+```
+
+where all terms are expressed per atom.
+
+This quantity is intended for comparison within the same Legacy ADSV workflow. It should not be interpreted as a complete charged-defect formation energy.
+
+---
+
+## Reproducibility Notes
+
+- Use the same host MP ID, supercell, dopant ratios, software environment, and model versions when comparing with the original dataset.
+- Dopant positions are selected randomly in the Legacy implementation. Runs without a fixed random seed may produce different atomic arrangements and slightly different energies or forces.
+- Nominal dopant fractions are converted to integer substitution counts inside a finite supercell. The actual composition may therefore differ from the nominal percentage.
+- Do not mix Legacy ADSV results with results from a later workflow that performs full MACE relaxation unless the methods are clearly separated.
+- Changing a later MACE relaxation target to `0.5 eV/Angstrom` does not reproduce this Legacy workflow, because the Legacy method uses a MACE single-point check rather than MACE relaxation.
+
+---
+
+## Recommended Result Wording
+
+For reports and manuscripts, the following description is accurate:
+
+> Structures were relaxed with CHGNet and subsequently cross-validated by a MACE single-point energy and residual-force calculation. Candidates with a maximum absolute Cartesian force component below 0.5 eV/Angstrom were classified as stable under the Legacy ADSV criterion.
+
+---
+
+## Reference
+
+The workflow was developed for rare-earth substitution screening in glass-ceramic host systems and is associated with the study:
+
+> *Thermodynamic Criterion for Interfacial Engineering of Ultra-Stable Phosphor-in-Glass Composites.*
+
+Please cite the corresponding publication when it becomes available.
+
+---
 
 ## License
 
-This project and its codebase are provided for academic research use.
+This project is distributed under the terms of the [MIT License](./LICENSE).

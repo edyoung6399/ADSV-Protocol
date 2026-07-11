@@ -10,6 +10,15 @@ Ultra-Stable Phosphor-in-Glass Composites" (Submitted for publication)
 Authors: Yuanming Yang, Chao Sun, Jidong Lin, Hanwen Yao, et al.
 """
 
+# ============================================================================
+# Repository compatibility patch (2026-07)
+# Only Materials Project query fields were restricted to data actually used.
+# The Legacy physical workflow, thresholds, energy formulas and MACE criterion
+# are unchanged. See README.md.
+# ============================================================================
+
+
+
 import os, numpy as np, time, psutil, csv, warnings, torch, gc, sys, json, argparse, re
 from pathlib import Path
 from datetime import datetime
@@ -84,7 +93,7 @@ def get_dynamic_mu_chgnet(el, model, relaxer, mpr, local_cache, env='O-rich'):
     try:
         if el == 'O':
             print("      ├─ Retrieving standard O reference phase (mp-12957)...")
-            doc = mpr.summary.get_data_by_id("mp-12957")
+            doc = mpr.summary.get_data_by_id("mp-12957", fields=["structure"])
             res = relaxer.relax(doc.structure, verbose=False)
             mu = float(res['trajectory'].energies[-1] / len(doc.structure))
             local_cache[el] = mu
@@ -95,7 +104,11 @@ def get_dynamic_mu_chgnet(el, model, relaxer, mpr, local_cache, env='O-rich'):
         if env == 'O-rich':
             mu_O = get_dynamic_mu_chgnet('O', model, relaxer, mpr, local_cache, env='metal-rich')
             with SuppressStdout():
-                docs = mpr.summary.search(chemsys=f"{el}-O", is_stable=True)
+                docs = mpr.summary.search(
+                    chemsys=f"{el}-O",
+                    is_stable=True,
+                    fields=["material_id", "formula_pretty", "structure", "formation_energy_per_atom"]
+                )
             
             if docs:
                 docs = sorted(docs, key=lambda x: x.formation_energy_per_atom)
@@ -117,7 +130,11 @@ def get_dynamic_mu_chgnet(el, model, relaxer, mpr, local_cache, env='O-rich'):
                 print(f"      ├─ No {el}-O stable phase found. Defaulting to elemental limit...")
                 
         with SuppressStdout():
-            docs = mpr.summary.search(chemsys=el, is_stable=True)
+            docs = mpr.summary.search(
+                chemsys=el,
+                is_stable=True,
+                fields=["material_id", "structure", "formation_energy_per_atom"]
+            )
             if not docs: raise ValueError(f"Elemental structure for {el} not found in MP.")
             struct = sorted(docs, key=lambda x: x.formation_energy_per_atom)[0].structure
         
@@ -356,7 +373,10 @@ def run_adsv_pipeline(args):
     print("Done")
     
     with MPRester(API_KEY) as mpr:
-        summary = mpr.summary.get_data_by_id(mp_id)
+        summary = mpr.summary.get_data_by_id(
+            mp_id,
+            fields=["structure", "formation_energy_per_atom"]
+        )
         host_struct = summary.structure
         mp_ef_host = summary.formation_energy_per_atom
         sg_symbol = SpacegroupAnalyzer(host_struct).get_space_group_symbol()
